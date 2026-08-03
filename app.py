@@ -1,12 +1,10 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import ta
 import streamlit.components.v1 as components
-import requests
 
 st.set_page_config(page_title="AI Trading Dashboard", layout="wide")
-st.title("📈 Auto Trading & News Dashboard")
+st.title("📈 Auto Trading Dashboard")
 
 # Sidebar Controls
 st.sidebar.header("⚙️ Market Settings")
@@ -43,12 +41,19 @@ def get_signal_data(ticker):
         if df.empty or len(df) < 21:
             return None
         
+        # Multi-index fix
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
-        df['EMA_9'] = ta.trend.ema_indicator(df['Close'], window=9)
-        df['EMA_21'] = ta.trend.ema_indicator(df['Close'], window=21)
+        # Pure Pandas Calculations
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
+        df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
         return df
     except Exception:
         return None
@@ -68,42 +73,10 @@ if data is not None and not data.empty:
 
     # Signal Logic
     if latest_ema9 > latest_ema21 and latest_rsi < 70:
-        st.success("🟢 **BUY CALL SIGNAL (CE):** Strong Bullish Crossover! Trend Upar hai. Entry le sakte hain.")
+        st.success("🟢 **BUY CALL SIGNAL (CE):** Strong Bullish Crossover! Trend Upar hai.")
     elif latest_ema9 < latest_ema21 and latest_rsi > 30:
-        st.error("🔴 **BUY PUT SIGNAL (PE):** Strong Bearish Crossover! Trend Niche hai. Entry le sakte hain.")
+        st.error("🔴 **BUY PUT SIGNAL (PE):** Strong Bearish Crossover! Trend Niche hai.")
     else:
-        st.warning("⏳ **WAIT SIGNAL:** Market Sideways / Volatile hai. Abhi koi clear setup nahi hai, wait karein.")
+        st.warning("⏳ **WAIT SIGNAL:** Market Sideways hai. Waiting for clear setup.")
 else:
-    st.info("⚠️ Please enter a valid stock ticker like RELIANCE.NS, SBIN.NS, or AAPL.")
-
-# -------------------------------------------------------------
-# 3. GLOBAL & INDIAN MARKET NEWS
-# -------------------------------------------------------------
-st.subheader("📰 Market News (Indian & Global)")
-
-tab1, tab2 = st.tabs(["🇮🇳 Indian Market News", "🌐 Global Market News"])
-
-def fetch_news(topic):
-    try:
-        feed_url = f"https://news.google.com/rss/search?q={topic}&hl=en-IN&gl=IN&ceid=IN:en"
-        import xml.etree.ElementTree as ET
-        res = requests.get(feed_url, timeout=5)
-        root = ET.fromstring(res.content)
-        items = root.findall('.//item')[:5]
-        return items
-    except Exception:
-        return []
-
-with tab1:
-    news_items = fetch_news("Indian Stock Market Nifty Sensex")
-    for item in news_items:
-        title = item.find('title').text if item.find('title') is not None else ""
-        link = item.find('link').text if item.find('link') is not None else "#"
-        st.write(f"- [{title}]({link})")
-
-with tab2:
-    news_items_global = fetch_news("Global Market Fed Inflation Stocks")
-    for item in news_items_global:
-        title = item.find('title').text if item.find('title') is not None else ""
-        link = item.find('link').text if item.find('link') is not None else "#"
-        st.write(f"- [{title}]({link})")
+    st.info("⚠️ Enter a valid ticker like RELIANCE.NS, SBIN.NS, or AAPL.")
