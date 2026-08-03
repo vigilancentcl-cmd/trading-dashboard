@@ -1,32 +1,41 @@
 import streamlit as st
 import yfinance as yf
 import json
+import pandas as pd
 
 st.set_page_config(page_title="Pro Trading Dashboard", layout="wide")
 st.title("⚡ Pro Canvas Trading Dashboard")
 
 # Sidebar
 st.sidebar.header("Market Settings")
-ticker_input = st.sidebar.text_input("Enter NSE Ticker (e.g. RELIANCE, SBIN, TATAMOTORS)", "RELIANCE")
+user_input = st.sidebar.text_input("Enter Ticker (e.g. RELIANCE, SBIN, ^NSEI, AAPL)", "RELIANCE")
 
-clean_ticker = ticker_input.strip().upper().replace(".NS", "")
-yf_symbol = f"{clean_ticker}.NS"
+clean_input = user_input.strip().upper()
 
-# Data Fetching
+# Symbol formatting logic
+if clean_input.startswith("^"):
+    yf_symbol = clean_input
+elif clean_input in ["AAPL", "TSLA", "MSFT", "NVDA", "BTC-USD"]:
+    yf_symbol = clean_input
+else:
+    yf_symbol = clean_input.replace(".NS", "") + ".NS"
+
+# Data Fetching using Ticker Object (Robust Method)
 @st.cache_data(ttl=60)
-def get_data(symbol):
+def fetch_stock_data(symbol):
     try:
-        data = yf.download(symbol, period="5d", interval="15m", progress=False)
-        if hasattr(data.columns, 'levels'):
-            data.columns = data.columns.get_level_values(0)
-        return data
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="5d", interval="15m")
+        if df.empty:
+            return None
+        return df
     except Exception:
         return None
 
-df = get_data(yf_symbol)
+df = fetch_stock_data(yf_symbol)
 
-if df is not None and not df.empty:
-    # 1. LIGHTWEIGHT CANVAS CANDLESTICK CHART (NEW METHOD)
+if df is not None and not df.empty and len(df) >= 14:
+    # 1. LIGHTWEIGHT CANVAS CANDLESTICK CHART
     chart_data = []
     for index, row in df.iterrows():
         chart_data.append({
@@ -67,7 +76,7 @@ if df is not None and not df.empty:
     </html>
     """
 
-    st.subheader(f"📊 Pure HTML5 Chart: {clean_ticker}")
+    st.subheader(f"📊 Live Technical Chart: {clean_input}")
     st.components.v1.html(html_code, height=470)
 
     # 2. SIGNALS
@@ -97,4 +106,4 @@ if df is not None and not df.empty:
         st.warning("⏳ **WAIT:** Sideways Market")
 
 else:
-    st.error("⚠️ Stock data load nahi ho pa raha. Ticker name check karein.")
+    st.error("⚠️ Stock data load nahi ho pa raha. Kripya valid symbol daalein (Jaise: RELIANCE, SBIN, ^NSEI, ya AAPL).")
