@@ -1,6 +1,6 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Pro Trading Dashboard", layout="wide")
 st.title("⚡ Pro Trading Dashboard")
@@ -43,10 +43,27 @@ if df is not None and not df.empty and len(df) >= 14:
     rs = gain / loss
     rsi = float((100 - (100 / (1 + rs))).iloc[-1])
 
-    # 1. LIVE PRICE CHART (ST.LINE_CHART)
-    st.subheader(f"📊 Price Movement Chart: {clean_input}")
-    chart_df = df[['Close', 'Open', 'High', 'Low']]
-    st.line_chart(chart_df['Close'], height=400)
+    # 1. CANDLESTICK CHART WITH AUTO-ZOOM
+    st.subheader(f"📊 Candlestick Chart: {clean_input}")
+    
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        name="Price"
+    )])
+    
+    fig.update_layout(
+        template="plotly_dark",
+        xaxis_rangeslider_visible=False,
+        height=450,
+        margin=dict(l=10, r=10, t=10, b=10),
+        yaxis=dict(autorange=True, fixedrange=False)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
     # 2. METRICS & SIGNALS
     st.subheader("⚡ Signal Engine")
