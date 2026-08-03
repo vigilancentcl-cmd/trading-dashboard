@@ -77,7 +77,7 @@ if df is not None and not df.empty and len(df) >= 14:
     """
 
     st.subheader(f"📊 Live Technical Chart: {clean_input}")
-    st.components.v1.html(html_code, height=520)
+    st.components.v1.html(html_code, height=520, scrolling=False)
 
     # 2. SIGNALS
     st.subheader("⚡ Signal Engine")
