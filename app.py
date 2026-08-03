@@ -13,8 +13,11 @@ st.sidebar.header("⚙️ Market Settings")
 market_type = st.sidebar.selectbox("Market Type", ["Indian Market (NSE)", "US / Global Market"])
 
 if market_type == "Indian Market (NSE)":
-    symbol = st.sidebar.text_input("Enter Ticker (e.g. ^NSEI for Nifty, RELIANCE.NS, TATAMOTORS.NS)", "^NSEI")
-    tv_symbol = f"NSE:{symbol.replace('.NS', '')}"
+    symbol = st.sidebar.text_input("Enter Ticker (e.g. ^NSEI for Nifty, RELIANCE.NS)", "^NSEI")
+    if symbol == "^NSEI":
+        tv_symbol = "NSE:NIFTY"
+    else:
+        tv_symbol = f"NSE:{symbol.replace('.NS', '')}"
 else:
     symbol = st.sidebar.text_input("Enter Ticker (e.g. AAPL, TSLA, BTC-USD)", "AAPL")
     tv_symbol = symbol
