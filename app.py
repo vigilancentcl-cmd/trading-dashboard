@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import ta
 import streamlit.components.v1 as components
 import requests
 
@@ -42,20 +43,12 @@ def get_signal_data(ticker):
         if df.empty or len(df) < 21:
             return None
         
-        # Clean Pandas DataFrame Columns
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # RSI Calculation
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-
-        # EMA Calculation
-        df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
-        df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+        df['EMA_9'] = ta.trend.ema_indicator(df['Close'], window=9)
+        df['EMA_21'] = ta.trend.ema_indicator(df['Close'], window=21)
         return df
     except Exception:
         return None
@@ -64,9 +57,9 @@ data = get_signal_data(symbol)
 
 if data is not None and not data.empty:
     latest_rsi = float(data['RSI'].dropna().iloc[-1])
-    latest_ema9 = float(data['EMA_9'].iloc[-1])
-    latest_ema21 = float(data['EMA_21'].iloc[-1])
-    last_price = float(data['Close'].iloc[-1])
+    latest_ema9 = float(data['EMA_9'].dropna().iloc[-1])
+    latest_ema21 = float(data['EMA_21'].dropna().iloc[-1])
+    last_price = float(data['Close'].dropna().iloc[-1])
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Current Price", f"₹{last_price:.2f}" if ".NS" in symbol else f"${last_price:.2f}")
