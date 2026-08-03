@@ -13,10 +13,13 @@ st.sidebar.header("⚙️ Market Settings")
 market_type = st.sidebar.selectbox("Market Type", ["Indian Market (NSE)", "US / Global Market"])
 
 if market_type == "Indian Market (NSE)":
-    symbol = st.sidebar.text_input("Enter Ticker (e.g. RELIANCE.NS, TATAMOTORS.NS, SBIN.NS)", "RELIANCE.NS")
-    # Mapping for TradingView Widget
-    if "NIFTY" in symbol.upper():
-        tv_symbol = "NSE:NIFTY50"
+    symbol = st.sidebar.text_input("Enter Ticker (e.g. RELIANCE.NS, TATAMOTORS.NS, ^NSEI)", "RELIANCE.NS")
+    
+    # Smart TradingView Symbol Mapper
+    if symbol == "^NSEI" or "NIFTY" in symbol.upper():
+        tv_symbol = "INDEX:NIFTY"
+    elif symbol == "^NSEBANK" or "BANKNIFTY" in symbol.upper():
+        tv_symbol = "INDEX:BANKNIFTY"
     else:
         tv_symbol = f"NSE:{symbol.replace('.NS', '')}"
 else:
@@ -29,27 +32,11 @@ else:
 st.subheader("📊 Live Technical Chart")
 tradingview_html = f"""
 <div class="tradingview-widget-container">
-  <div id="tradingview_chart"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget({{
-    "width": "100%",
-    "height": 500,
-    "symbol": "{tv_symbol}",
-    "interval": "5",
-    "timezone": "Asia/Kolkata",
-    "theme": "dark",
-    "style": "1",
-    "locale": "en",
-    "toolbar_bg": "#f1f3f6",
-    "enable_publishing": false,
-    "allow_symbol_change": true,
-    "container_id": "tradingview_chart"
-  }});
-  </script>
+  <iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol={tv_symbol}&interval=5&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=RSI%40tv-basicstudies%2CMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata" 
+          width="100%" height="520" frameborder="0" allowtransparency="true" scrolling="no"></iframe>
 </div>
 """
-components.html(tradingview_html, height=520)
+components.html(tradingview_html, height=530)
 
 # -------------------------------------------------------------
 # 2. AUTO BUY / SELL / WAIT SIGNAL GENERATOR
@@ -58,41 +45,41 @@ st.subheader("⚡ Automated Entry / Exit Signal")
 
 @st.cache_data(ttl=60)
 def get_signal_data(ticker):
-    df = yf.download(ticker, period="5d", interval="15m")
-    if df.empty:
+    try:
+        df = yf.download(ticker, period="5d", interval="15m")
+        if df.empty:
+            return None
+        
+        # Calculate RSI & Moving Averages
+        df['RSI'] = ta.momentum.rsi(df['Close'].squeeze(), window=14)
+        df['EMA_9'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=9)
+        df['EMA_21'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=21)
+        return df
+    except Exception:
         return None
-    
-    # Calculate RSI & Moving Averages
-    df['RSI'] = ta.momentum.rsi(df['Close'].squeeze(), window=14)
-    df['EMA_9'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=9)
-    df['EMA_21'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=21)
-    return df
 
-try:
-    data = get_signal_data(symbol)
+data = get_signal_data(symbol)
 
-    if data is not None and not data.empty:
-        latest_rsi = data['RSI'].iloc[-1]
-        latest_ema9 = data['EMA_9'].iloc[-1]
-        latest_ema21 = data['EMA_21'].iloc[-1]
-        last_price = data['Close'].iloc[-1].item()
+if data is not None and not data.empty:
+    latest_rsi = data['RSI'].iloc[-1]
+    latest_ema9 = data['EMA_9'].iloc[-1]
+    latest_ema21 = data['EMA_21'].iloc[-1]
+    last_price = data['Close'].iloc[-1].item()
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Current Price", f"{last_price:.2f}")
-        col2.metric("RSI (14)", f"{latest_rsi:.2f}")
-        col3.metric("EMA Trend", "Bullish" if latest_ema9 > latest_ema21 else "Bearish")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Current Price", f"₹{last_price:.2f}" if "NS" in symbol or "^" in symbol else f"${last_price:.2f}")
+    col2.metric("RSI (14)", f"{latest_rsi:.2f}")
+    col3.metric("EMA Trend", "Bullish" if latest_ema9 > latest_ema21 else "Bearish")
 
-        # Signal Logic
-        if latest_ema9 > latest_ema21 and latest_rsi < 70:
-            st.success("🟢 **BUY CALL SIGNAL (CE):** Strong Bullish Crossover! Trend Upar hai. Entry le sakte hain.")
-        elif latest_ema9 < latest_ema21 and latest_rsi > 30:
-            st.error("🔴 **BUY PUT SIGNAL (PE):** Strong Bearish Crossover! Trend Niche hai. Entry le sakte hain.")
-        else:
-            st.warning("⏳ **WAIT SIGNAL:** Market Sideways / Volatile hai. Abhi koi clear setup nahi hai, wait karein.")
+    # Signal Logic
+    if latest_ema9 > latest_ema21 and latest_rsi < 70:
+        st.success("🟢 **BUY CALL SIGNAL (CE):** Strong Bullish Crossover! Trend Upar hai. Entry le sakte hain.")
+    elif latest_ema9 < latest_ema21 and latest_rsi > 30:
+        st.error("🔴 **BUY PUT SIGNAL (PE):** Strong Bearish Crossover! Trend Niche hai. Entry le sakte hain.")
     else:
-        st.info("No data fetched for signals. Check ticker symbol.")
-except Exception as e:
-    st.info("Fetching signal data... Please re-select or enter a valid stock ticker like RELIANCE.NS.")
+        st.warning("⏳ **WAIT SIGNAL:** Market Sideways / Volatile hai. Abhi koi clear setup nahi hai, wait karein.")
+else:
+    st.info("⚠️ Enter a valid stock/index ticker (e.g. RELIANCE.NS, SBIN.NS, ^NSEI) to see signals.")
 
 # -------------------------------------------------------------
 # 3. GLOBAL & INDIAN MARKET NEWS
@@ -105,11 +92,11 @@ def fetch_news(topic):
     try:
         feed_url = f"https://news.google.com/rss/search?q={topic}&hl=en-IN&gl=IN&ceid=IN:en"
         import xml.etree.ElementTree as ET
-        res = requests.get(feed_url)
+        res = requests.get(feed_url, timeout=5)
         root = ET.fromstring(res.content)
         items = root.findall('.//item')[:5]
         return items
-    except:
+    except Exception:
         return []
 
 with tab1:
