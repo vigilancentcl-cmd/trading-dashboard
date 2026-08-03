@@ -13,13 +13,14 @@ st.sidebar.header("⚙️ Market Settings")
 market_type = st.sidebar.selectbox("Market Type", ["Indian Market (NSE)", "US / Global Market"])
 
 if market_type == "Indian Market (NSE)":
-    symbol = st.sidebar.text_input("Enter Ticker (e.g. ^NSEI for Nifty, RELIANCE.NS)", "^NSEI")
-    if symbol == "^NSEI":
-        tv_symbol = "NSE:NIFTY"
+    symbol = st.sidebar.text_input("Enter Ticker (e.g. RELIANCE.NS, TATAMOTORS.NS, SBIN.NS)", "RELIANCE.NS")
+    # Mapping for TradingView Widget
+    if "NIFTY" in symbol.upper():
+        tv_symbol = "NSE:NIFTY50"
     else:
         tv_symbol = f"NSE:{symbol.replace('.NS', '')}"
 else:
-    symbol = st.sidebar.text_input("Enter Ticker (e.g. AAPL, TSLA, BTC-USD)", "AAPL")
+    symbol = st.sidebar.text_input("Enter Ticker (e.g. AAPL, TSLA, BTCUSD)", "AAPL")
     tv_symbol = symbol
 
 # -------------------------------------------------------------
@@ -43,7 +44,6 @@ tradingview_html = f"""
     "toolbar_bg": "#f1f3f6",
     "enable_publishing": false,
     "allow_symbol_change": true,
-    "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies", "MASimple@tv-basicstudies"],
     "container_id": "tradingview_chart"
   }});
   </script>
@@ -60,7 +60,7 @@ st.subheader("⚡ Automated Entry / Exit Signal")
 def get_signal_data(ticker):
     df = yf.download(ticker, period="5d", interval="15m")
     if df.empty:
-        return None, None
+        return None
     
     # Calculate RSI & Moving Averages
     df['RSI'] = ta.momentum.rsi(df['Close'].squeeze(), window=14)
@@ -68,28 +68,31 @@ def get_signal_data(ticker):
     df['EMA_21'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=21)
     return df
 
-data = get_signal_data(symbol)
+try:
+    data = get_signal_data(symbol)
 
-if data is not None and not data.empty:
-    latest_rsi = data['RSI'].iloc[-1]
-    latest_ema9 = data['EMA_9'].iloc[-1]
-    latest_ema21 = data['EMA_21'].iloc[-1]
-    last_price = data['Close'].iloc[-1].item()
+    if data is not None and not data.empty:
+        latest_rsi = data['RSI'].iloc[-1]
+        latest_ema9 = data['EMA_9'].iloc[-1]
+        latest_ema21 = data['EMA_21'].iloc[-1]
+        last_price = data['Close'].iloc[-1].item()
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Current Price", f"{last_price:.2f}")
-    col2.metric("RSI (14)", f"{latest_rsi:.2f}")
-    col3.metric("EMA Trend", "Bullish" if latest_ema9 > latest_ema21 else "Bearish")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Current Price", f"{last_price:.2f}")
+        col2.metric("RSI (14)", f"{latest_rsi:.2f}")
+        col3.metric("EMA Trend", "Bullish" if latest_ema9 > latest_ema21 else "Bearish")
 
-    # Signal Logic
-    if latest_ema9 > latest_ema21 and latest_rsi < 70:
-        st.success("🟢 **BUY CALL SIGNAL (CE):** Strong Bullish Crossover! Trend Upar hai. Entry le sakte hain.")
-    elif latest_ema9 < latest_ema21 and latest_rsi > 30:
-        st.error("🔴 **BUY PUT SIGNAL (PE):** Strong Bearish Crossover! Trend Niche hai. Entry le sakte hain.")
+        # Signal Logic
+        if latest_ema9 > latest_ema21 and latest_rsi < 70:
+            st.success("🟢 **BUY CALL SIGNAL (CE):** Strong Bullish Crossover! Trend Upar hai. Entry le sakte hain.")
+        elif latest_ema9 < latest_ema21 and latest_rsi > 30:
+            st.error("🔴 **BUY PUT SIGNAL (PE):** Strong Bearish Crossover! Trend Niche hai. Entry le sakte hain.")
+        else:
+            st.warning("⏳ **WAIT SIGNAL:** Market Sideways / Volatile hai. Abhi koi clear setup nahi hai, wait karein.")
     else:
-        st.warning("⏳ **WAIT SIGNAL:** Market Sideways / Volatile hai. Abhi koi clear setup nahi hai, wait karein.")
-else:
-    st.info("No data fetched for signals.")
+        st.info("No data fetched for signals. Check ticker symbol.")
+except Exception as e:
+    st.info("Fetching signal data... Please re-select or enter a valid stock ticker like RELIANCE.NS.")
 
 # -------------------------------------------------------------
 # 3. GLOBAL & INDIAN MARKET NEWS
@@ -99,9 +102,7 @@ st.subheader("📰 Market News (Indian & Global)")
 tab1, tab2 = st.tabs(["🇮🇳 Indian Market News", "🌐 Global Market News"])
 
 def fetch_news(topic):
-    url = f"https://newsapi.org/v2/everything?q={topic}&sortBy=publishedAt&apiKey=YOUR_NEWS_API_KEY"
     try:
-        # Simple RSS alternative for quick display
         feed_url = f"https://news.google.com/rss/search?q={topic}&hl=en-IN&gl=IN&ceid=IN:en"
         import xml.etree.ElementTree as ET
         res = requests.get(feed_url)
