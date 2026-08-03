@@ -1,54 +1,82 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
+import json
 
-st.set_page_config(page_title="Trading Dashboard", layout="wide")
-st.title("📈 Auto Trading Dashboard")
+st.set_page_config(page_title="Pro Trading Dashboard", layout="wide")
+st.title("⚡ Pro Canvas Trading Dashboard")
 
-# Sidebar Setup
+# Sidebar
 st.sidebar.header("Market Settings")
-market_type = st.sidebar.selectbox("Market Type", ["Indian Market (NSE)", "US / Global Market"])
+ticker_input = st.sidebar.text_input("Enter NSE Ticker (e.g. RELIANCE, SBIN, TATAMOTORS)", "RELIANCE")
 
-if market_type == "Indian Market (NSE)":
-    user_input = st.sidebar.text_input("Enter NSE Ticker (e.g. RELIANCE, SBIN, TATAMOTORS)", "RELIANCE")
-    clean_symbol = user_input.strip().upper().replace(".NS", "")
-    yf_ticker = f"{clean_symbol}.NS"
-    tv_ticker = f"NSE:{clean_symbol}"
-else:
-    user_input = st.sidebar.text_input("Enter Ticker (e.g. AAPL, TSLA, BTCUSD)", "AAPL")
-    clean_symbol = user_input.strip().upper()
-    yf_ticker = clean_symbol
-    tv_ticker = clean_symbol
+clean_ticker = ticker_input.strip().upper().replace(".NS", "")
+yf_symbol = f"{clean_ticker}.NS"
 
-# 1. TRADINGVIEW LIVE CHART WIDGET
-st.subheader(f"📊 Live Technical Chart ({clean_symbol})")
-chart_html = f"""
-<iframe src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol={tv_ticker}&interval=5&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=RSI%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata" 
-        width="100%" height="500" frameborder="0" allowtransparency="true" scrolling="no"></iframe>
-"""
-st.components.v1.html(chart_html, height=520)
-
-# 2. AUTO BUY / SELL / WAIT SIGNALS
-st.subheader("⚡ Automated Entry / Exit Signal")
-
+# Data Fetching
 @st.cache_data(ttl=60)
-def fetch_stock_data(symbol):
+def get_data(symbol):
     try:
-        data = yf.Ticker(symbol)
-        df = data.history(period="5d", interval="15m")
-        return df
+        data = yf.download(symbol, period="5d", interval="15m", progress=False)
+        if hasattr(data.columns, 'levels'):
+            data.columns = data.columns.get_level_values(0)
+        return data
     except Exception:
         return None
 
-df = fetch_stock_data(yf_ticker)
+df = get_data(yf_symbol)
 
-if df is not None and not df.empty and len(df) >= 21:
+if df is not None and not df.empty:
+    # 1. LIGHTWEIGHT CANVAS CANDLESTICK CHART (NEW METHOD)
+    chart_data = []
+    for index, row in df.iterrows():
+        chart_data.append({
+            "time": int(index.timestamp()),
+            "open": float(row['Open']),
+            "high": float(row['High']),
+            "low": float(row['Low']),
+            "close": float(row['Close'])
+        })
+
+    json_data = json.dumps(chart_data)
+
+    html_code = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+        <style>
+            #chart {{ width: 100%; height: 450px; background-color: #111; }}
+        </style>
+    </head>
+    <body style="margin:0; background-color: #111;">
+        <div id="chart"></div>
+        <script>
+            const chart = LightweightCharts.createChart(document.getElementById('chart'), {{
+                layout: {{ backgroundColor: '#111111', textColor: '#d1d4dc' }},
+                grid: {{ vertLines: {{ color: '#222' }}, horzLines: {{ color: '#222' }} }},
+                timeScale: {{ timeVisible: true, secondsVisible: false }}
+            }});
+            const candlestickSeries = chart.addCandlestickSeries({{
+                upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+                wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+            }});
+            candlestickSeries.setData({json_data});
+            chart.timeScale().fitContent();
+        </script>
+    </body>
+    </html>
+    """
+
+    st.subheader(f"📊 Pure HTML5 Chart: {clean_ticker}")
+    st.components.v1.html(html_code, height=470)
+
+    # 2. SIGNALS
+    st.subheader("⚡ Signal Engine")
     close = df['Close']
+    last_price = float(close.iloc[-1])
     
-    # Pure Pandas Calculations
     ema_9 = float(close.ewm(span=9, adjust=False).mean().iloc[-1])
     ema_21 = float(close.ewm(span=21, adjust=False).mean().iloc[-1])
-    last_price = float(close.iloc[-1])
 
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -56,16 +84,17 @@ if df is not None and not df.empty and len(df) >= 21:
     rs = gain / loss
     rsi = float((100 - (100 / (1 + rs))).iloc[-1])
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Current Price", f"₹{last_price:.2f}" if market_type == "Indian Market (NSE)" else f"${last_price:.2f}")
-    col2.metric("RSI (14)", f"{rsi:.2f}")
-    col3.metric("EMA Trend", "Bullish" if ema_9 > ema_21 else "Bearish")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Live Price", f"₹{last_price:.2f}")
+    c2.metric("RSI (14)", f"{rsi:.2f}")
+    c3.metric("Trend", "Bullish 🟢" if ema_9 > ema_21 else "Bearish 🔴")
 
     if ema_9 > ema_21 and rsi < 70:
-        st.success("🟢 **BUY CALL SIGNAL (CE):** Bullish Crossover! Trend Upar Hai.")
+        st.success("🟢 **BUY CE SIGNAL:** Strong Bullish Crossover")
     elif ema_9 < ema_21 and rsi > 30:
-        st.error("🔴 **BUY PUT SIGNAL (PE):** Bearish Crossover! Trend Niche Hai.")
+        st.error("🔴 **BUY PE SIGNAL:** Strong Bearish Crossover")
     else:
-        st.warning("⏳ **WAIT SIGNAL:** Market Sideways Hai. Wait For Clear Setup.")
+        st.warning("⏳ **WAIT:** Sideways Market")
+
 else:
-    st.info("⚠️ Data fetch ho raha hai ya Ticker invalid hai. Sahi symbol daalein (e.g. RELIANCE, SBIN).")
+    st.error("⚠️ Stock data load nahi ho pa raha. Ticker name check karein.")
