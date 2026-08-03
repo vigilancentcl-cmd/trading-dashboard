@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import ta
 import streamlit.components.v1 as components
 import requests
 
@@ -13,21 +12,14 @@ st.sidebar.header("⚙️ Market Settings")
 market_type = st.sidebar.selectbox("Market Type", ["Indian Market (NSE)", "US / Global Market"])
 
 if market_type == "Indian Market (NSE)":
-    symbol = st.sidebar.text_input("Enter Ticker (e.g. RELIANCE.NS, TATAMOTORS.NS, ^NSEI)", "RELIANCE.NS")
-    
-    # Smart TradingView Symbol Mapper
-    if symbol == "^NSEI" or "NIFTY" in symbol.upper():
-        tv_symbol = "INDEX:NIFTY"
-    elif symbol == "^NSEBANK" or "BANKNIFTY" in symbol.upper():
-        tv_symbol = "INDEX:BANKNIFTY"
-    else:
-        tv_symbol = f"NSE:{symbol.replace('.NS', '')}"
+    symbol = st.sidebar.text_input("Enter Ticker (e.g. RELIANCE.NS, SBIN.NS, TATAMOTORS.NS)", "RELIANCE.NS")
+    tv_symbol = f"NSE:{symbol.replace('.NS', '')}"
 else:
     symbol = st.sidebar.text_input("Enter Ticker (e.g. AAPL, TSLA, BTCUSD)", "AAPL")
     tv_symbol = symbol
 
 # -------------------------------------------------------------
-# 1. LIVE TRADINGVIEW CHART WITH INDICATORS
+# 1. LIVE TRADINGVIEW CHART
 # -------------------------------------------------------------
 st.subheader("📊 Live Technical Chart")
 tradingview_html = f"""
@@ -46,14 +38,24 @@ st.subheader("⚡ Automated Entry / Exit Signal")
 @st.cache_data(ttl=60)
 def get_signal_data(ticker):
     try:
-        df = yf.download(ticker, period="5d", interval="15m")
-        if df.empty:
+        df = yf.download(ticker, period="5d", interval="15m", progress=False)
+        if df.empty or len(df) < 21:
             return None
         
-        # Calculate RSI & Moving Averages
-        df['RSI'] = ta.momentum.rsi(df['Close'].squeeze(), window=14)
-        df['EMA_9'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=9)
-        df['EMA_21'] = ta.trend.ema_indicator(df['Close'].squeeze(), window=21)
+        # Clean Pandas DataFrame Columns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # RSI Calculation
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+
+        # EMA Calculation
+        df['EMA_9'] = df['Close'].ewm(span=9, adjust=False).mean()
+        df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
         return df
     except Exception:
         return None
@@ -61,13 +63,13 @@ def get_signal_data(ticker):
 data = get_signal_data(symbol)
 
 if data is not None and not data.empty:
-    latest_rsi = data['RSI'].iloc[-1]
-    latest_ema9 = data['EMA_9'].iloc[-1]
-    latest_ema21 = data['EMA_21'].iloc[-1]
-    last_price = data['Close'].iloc[-1].item()
+    latest_rsi = float(data['RSI'].dropna().iloc[-1])
+    latest_ema9 = float(data['EMA_9'].iloc[-1])
+    latest_ema21 = float(data['EMA_21'].iloc[-1])
+    last_price = float(data['Close'].iloc[-1])
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Current Price", f"₹{last_price:.2f}" if "NS" in symbol or "^" in symbol else f"${last_price:.2f}")
+    col1.metric("Current Price", f"₹{last_price:.2f}" if ".NS" in symbol else f"${last_price:.2f}")
     col2.metric("RSI (14)", f"{latest_rsi:.2f}")
     col3.metric("EMA Trend", "Bullish" if latest_ema9 > latest_ema21 else "Bearish")
 
@@ -79,7 +81,7 @@ if data is not None and not data.empty:
     else:
         st.warning("⏳ **WAIT SIGNAL:** Market Sideways / Volatile hai. Abhi koi clear setup nahi hai, wait karein.")
 else:
-    st.info("⚠️ Enter a valid stock/index ticker (e.g. RELIANCE.NS, SBIN.NS, ^NSEI) to see signals.")
+    st.info("⚠️ Please enter a valid stock ticker like RELIANCE.NS, SBIN.NS, or AAPL.")
 
 # -------------------------------------------------------------
 # 3. GLOBAL & INDIAN MARKET NEWS
